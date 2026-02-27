@@ -53,15 +53,16 @@ class _DiceScreenState extends State<DiceScreen>
     _currentDice = 1;
     _nextDice = 2;
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 450), // Slightly faster for liquid feel
+      // Increased duration slightly to let the spring effect breathe
+      duration: const Duration(milliseconds: 600), 
       vsync: this,
     );
     
-    // easeOutSine gives a nice "rushing" liquid feel that settles smoothly
+    // easeOutBack makes the animation overshoot and bounce back
     _liquidAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Curves.easeOutSine,
+        curve: Curves.easeOutBack, 
       ),
     );
   }
@@ -107,12 +108,10 @@ class _DiceScreenState extends State<DiceScreen>
     _animationController.forward(from: 0.0).then((_) {
       if (!mounted) return;
       
-      // Update current dice immediately after the sweep finishes
       setState(() {
         _currentDice = _nextDice;
       });
       
-      // Schedule next animation
       if (index < sequence.length) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -120,7 +119,6 @@ class _DiceScreenState extends State<DiceScreen>
           }
         });
       } else {
-        // Done rolling
         _isRolling = false;
       }
     });
@@ -143,15 +141,23 @@ class _DiceScreenState extends State<DiceScreen>
               color: Colors.black,
               child: Stack(
                 children: [
-                  // 1. Current dice - Stays static in the background
+                  // 1. Current dice - Fades back and slides left gently
                   Container(
                     width: screenWidth,
                     height: screenHeight,
                     color: diceColors[_currentDice - 1],
                     child: Center(
-                      child: DiceDots(
-                        number: _currentDice,
-                        color: Colors.white,
+                      child: Transform.translate(
+                        // Sinks to the left as the liquid covers it
+                        offset: Offset(-80 * _liquidAnimation.value, 0),
+                        child: Transform.scale(
+                          // Shrinks slightly
+                          scale: 1.0 - (0.1 * _liquidAnimation.value),
+                          child: DiceDots(
+                            number: _currentDice,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -164,9 +170,17 @@ class _DiceScreenState extends State<DiceScreen>
                       height: screenHeight,
                       color: diceColors[_nextDice - 1],
                       child: Center(
-                        child: DiceDots(
-                          number: _nextDice,
-                          color: Colors.white,
+                        child: Transform.translate(
+                          // Floats in from the right side riding the liquid wave
+                          offset: Offset(150 * (1 - _liquidAnimation.value), 0),
+                          child: Transform.scale(
+                            // Grows slightly into place
+                            scale: 0.8 + (0.2 * _liquidAnimation.value),
+                            child: DiceDots(
+                              number: _nextDice,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -217,36 +231,29 @@ class LiquidClipper extends CustomClipper<Path> {
     final path = Path();
     
     if (progress <= 0.0) {
-      return path; // Nothing to show yet
-    }
-    if (progress >= 1.0) {
-      path.addRect(Rect.fromLTWH(0, 0, size.width, size.height));
-      return path; // Fully revealed
+      return path; 
     }
 
-    // The base X coordinate moves from right (width) to left (0)
+    // Allow progress to exceed 1.0 safely so the easeOutBack bounce works without glitching.
     double baseX = size.width * (1 - progress);
     
-    // The "bulge" or "drop" pulls out further left than the base line.
-    // We use sin() so it starts at 0, peaks in the middle of the animation, and goes back to 0.
-    double maxBulge = 120.0; // Increase this for a deeper liquid curve
-    double bulge = sin(progress * pi) * maxBulge;
+    // Clamp the sin input to 0-1 so the bulge doesn't invert during the bounce overshoot
+    double normalizedProgress = progress.clamp(0.0, 1.0);
+    double maxBulge = 140.0; // Slightly deeper bulge
+    double bulge = sin(normalizedProgress * pi) * maxBulge;
     
-    // The control point for the curve (pulls the liquid left)
     double controlX = baseX - bulge;
     double controlY = size.height / 2;
 
-    // Draw the shape
-    path.moveTo(size.width, 0); // Start top right
-    path.lineTo(baseX, 0); // Move to top left of the curve
+    path.moveTo(size.width, 0); 
+    path.lineTo(baseX, 0); 
     
-    // Create the smooth liquid curve
     path.quadraticBezierTo(
-      controlX, controlY, // The peak of the liquid bubble
-      baseX, size.height  // Connects to the bottom left
+      controlX, controlY, 
+      baseX, size.height  
     );
     
-    path.lineTo(size.width, size.height); // Bottom right
+    path.lineTo(size.width, size.height); 
     path.close();
 
     return path;
